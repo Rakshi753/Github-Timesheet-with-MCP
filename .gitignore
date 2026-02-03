@@ -9,7 +9,7 @@ __pycache__/
 .venv/
 venv/
 env/
-
+README.md/
 # --- Generated Data ---
 # We don't want to push the Excel reports containing private commit data
 *.xlsx
