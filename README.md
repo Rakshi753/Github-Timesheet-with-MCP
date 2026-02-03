@@ -48,17 +48,18 @@ graph TD
 
 📂 Project Structure
 
+```text
 mcp-timesheet/
-├── .env                    # API Keys (Not committed)
-├── server_config.json      # Registry of MCP Servers
-├── pyproject.toml          # Dependencies (Managed by uv)
+├── .env                    # API Keys & Secrets (Git ignored)
+├── server_config.json      # Registry/Configuration for MCP Servers
+├── pyproject.toml          # Project dependencies (managed via uv)
 ├── main.py                 # Application Entry Point
 └── src/
-    ├── client.py           # The Orchestrator (LangGraph Agent)
-    ├── state.py            # Shared State Schema
+    ├── client.py           # The Orchestrator (LangGraph Agent logic)
+    ├── state.py            # Shared State Schema for the Agent
     └── servers/
-        ├── github_server.py # FastMCP Server: Fetches GitHub Data
-        └── excel_server.py  # FastMCP Server: Handles Excel I/O
+        ├── github_server.py # FastMCP Server: Fetches GitHub Activity
+        └── excel_server.py  # FastMCP Server: Handles Excel I/O operations
 
 
 
