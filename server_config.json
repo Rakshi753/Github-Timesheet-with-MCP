@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "github-tool": {
+      "command": "uv",
+      "args": ["run", "src/servers/github_server.py"],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+      }
+    },
+    "excel-tool": {
+      "command": "uv",
+      "args": ["run", "src/servers/excel_server.py"]
+    }
+  }
+}

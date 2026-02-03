@@ -1,0 +1,23 @@
+# --- Secrets (CRITICAL) ---
+.env
+
+# --- Python & Runtime ---
+__pycache__/
+*.pyc
+
+# --- Virtual Environments (uv/pip) ---
+.venv/
+venv/
+env/
+
+# --- Generated Data ---
+# We don't want to push the Excel reports containing private commit data
+*.xlsx
+
+# --- IDE Settings (Optional) ---
+.vscode/
+.idea/
+
+# --- System ---
+.DS_Store
+Thumbs.db
