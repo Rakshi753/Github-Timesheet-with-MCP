@@ -119,10 +119,11 @@ Create a `.env` file in the root directory:
 GITHUB_TOKEN=ghp_your_token
 
 # Jira
+```text
 JIRA_URL=[https://your-domain.atlassian.net](https://your-domain.atlassian.net)
 JIRA_EMAIL=your_email@example.com
 JIRA_API_TOKEN=ATATT3... # Create at [https://id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens)
-
+```
 # AI
 GROQ_API_KEY=gsk_your_key
 
@@ -146,38 +147,35 @@ Run the agent using `uv`. This automatically handles virtual environments and de
 uv run main.py
 ```
 
-Interactive Steps:
-Enter Inputs:
+## 🛠 Interactive Workflow
 
-GitHub Username & Repo (e.g., owner/repo).
+1.  **Enter Inputs:**
+    * **GitHub:** Provide Username & Repo (e.g., `owner/repo`).
+    * **Jira (Optional):** Enter Project Key (e.g., `PROJ1`). Leave blank to skip.
+2.  **Processing:**
+    * The agent scans GitHub commits and enriches the data.
+    * The agent scans Jira for your recent tasks.
+    * All raw data is saved to a local Excel file for persistence.
+3.  **Review Log:**
+    * The system prints the available date range found in your logs to help you decide your report window.
+4.  **Generate Report:**
+    * **Start Date:** Enter your start point (e.g., `2024-02-10`).
+    * **Duration:** Define the period (e.g., `5 days`).
+5.  **Final Output:**
+    * A unified markdown table combining **Code + Plans** into a single professional narrative.
 
-Jira Project Key (e.g., PROJ1). Optional: Leave blank to skip Jira.
+---
 
-Processing:
+## 🧠 Smart Features
 
-The agent scans GitHub commits and enriches them.
+### 🌊 "Work Spreading" Logic
+> **Problem:** Developers often code intensely on specific days (e.g., Tuesday/Thursday) but need to fill a standard Monday–Friday timesheet.
 
-The agent scans Jira for your recent tasks.
+**Solution:** The agent treats your week's activity as a **"Pool of Tasks."** It intelligently distributes this work across your chosen duration to create a smooth, continuous professional narrative, ensuring no "empty" days in your report.
 
-All data is saved to a local Excel file.
+### 🔗 Unified Context
+> **Problem:** Disconnected logs like *"Fixed bug"* (Git) and *"Jira-123: Login Error"* (Jira) describe the same effort but look messy.
 
-Review Log: The system prints the available date range found in your logs.
-
-Generate Report:
-
-Enter Start Date (e.g., 2024-02-10).
-
-Enter Duration (e.g., 5 days).
-
-Final Output: A unified markdown table combining Code + Plans into a single professional narrative.
-
-🧠 Smart Features
-"Work Spreading" Logic
-Problem: Developers often code on Tuesday/Thursday but need to fill a Mon-Fri timesheet.
-
-Solution: The agent treats your week's activity as a "Pool of Tasks." It intelligently distributes this work across your chosen duration to create a smooth, continuous narrative.
-
-Unified Context
-Problem: "Fixed bug" (Git) and "Jira-123: Login Error" (Jira) are the same task.
-
-Solution: The AI reads both sources and consolidates them into one strong entry: "Resolved critical login authentication errors (Jira-123) by fixing the validation logic backend."
+**Solution:** The AI cross-references both sources to consolidate them into a single, high-impact entry:
+* *Before:* "Fixed bug" / "Jira-123: Login Error"
+* *After:* **"Resolved critical login authentication errors (Jira-123) by fixing the validation logic backend."**
