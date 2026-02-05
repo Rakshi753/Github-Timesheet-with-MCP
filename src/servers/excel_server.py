@@ -39,44 +39,84 @@ def save_github_data_to_excel(user_commits: List[Dict], main_commits: List[Dict]
 @mcp.tool()
 def get_data_date_range(file_path: str) -> str:
     """
-    Returns the First Push Date and Latest Push Date found in the Excel file.
-    Format: "YYYY-MM-DD to YYYY-MM-DD"
+    Returns the date range from EITHER GitHub or Jira data (or both).
     """
     if not os.path.exists(file_path): return "Error: File not found"
+    
+    all_dates = []
+    
+    # 1. Try GitHub Dates
     try:
-        df = pd.read_excel(file_path, sheet_name="Target_User_Activity")
-        if df.empty: return "No data found"
-        
-        df['date'] = pd.to_datetime(df['date'])
-        min_date = df['date'].min().strftime('%Y-%m-%d')
-        max_date = df['date'].max().strftime('%Y-%m-%d')
-        return f"{min_date}|{max_date}"
+        df_git = pd.read_excel(file_path, sheet_name="Target_User_Activity")
+        if not df_git.empty and 'date' in df_git.columns:
+            all_dates.extend(pd.to_datetime(df_git['date']).tolist())
     except:
+        pass # Sheet might not exist
+        
+    # 2. Try Jira Dates
+    try:
+        df_jira = pd.read_excel(file_path, sheet_name="Jira_Activity")
+        if not df_jira.empty and 'Date' in df_jira.columns:
+            all_dates.extend(pd.to_datetime(df_jira['Date']).tolist())
+    except:
+        pass # Sheet might not exist
+
+    if not all_dates:
         return "No date data available"
+        
+    # Calculate Range
+    min_date = min(all_dates).strftime('%Y-%m-%d')
+    max_date = max(all_dates).strftime('%Y-%m-%d')
+    return f"{min_date}|{max_date}"
 
 @mcp.tool()
-def read_specific_date_range(file_path: str, start_date: str, end_date: str) -> str:
+def read_unified_date_range(file_path: str, start_date: str, end_date: str) -> str:
     """
-    Reads Excel and returns commits ONLY for the specific date range (Inclusive).
+    Reads BOTH GitHub and Jira sheets for the specific date range.
+    Returns a combined Markdown string.
     """
     if not os.path.exists(file_path): return "Error: File not found"
+    
+    combined_context = ""
+    
+    # 1. Read GitHub Data
     try:
-        df = pd.read_excel(file_path, sheet_name="Target_User_Activity")
-        df['date'] = pd.to_datetime(df['date'])
+        df_git = pd.read_excel(file_path, sheet_name="Target_User_Activity")
+        df_git['date'] = pd.to_datetime(df_git['date'])
+        mask = (df_git['date'] >= start_date) & (df_git['date'] <= end_date)
+        git_filtered = df_git.loc[mask].sort_values('date')
         
-        mask = (df['date'] >= start_date) & (df['date'] <= end_date)
-        filtered = df.loc[mask].sort_values('date')
+        if not git_filtered.empty:
+            git_filtered['date'] = git_filtered['date'].dt.strftime('%Y-%m-%d')
+            col = "ai_summary" if "ai_summary" in git_filtered.columns else "message"
+            # Add Source Tag
+            git_filtered['source'] = "[GitHub]"
+            combined_context += "### GITHUB ACTIVITY:\n"
+            combined_context += git_filtered[["date", "source", "branch_context", col]].to_markdown(index=False)
+            combined_context += "\n\n"
+    except:
+        combined_context += "No GitHub data found.\n\n"
+
+    # 2. Read Jira Data
+    try:
+        df_jira = pd.read_excel(file_path, sheet_name="Jira_Activity")
+        # Ensure column names match what we saved (Date, Key, Summary, etc.)
+        df_jira['Date'] = pd.to_datetime(df_jira['Date'])
+        mask = (df_jira['Date'] >= start_date) & (df_jira['Date'] <= end_date)
+        jira_filtered = df_jira.loc[mask].sort_values('Date')
         
-        if filtered.empty: return "No commits found in this specific 5-day window."
+        if not jira_filtered.empty:
+            jira_filtered['Date'] = jira_filtered['Date'].dt.strftime('%Y-%m-%d')
+            # Add Source Tag
+            jira_filtered['Source'] = "[Jira]"
+            combined_context += "### JIRA ACTIVITY:\n"
+            # Select relevant columns: Date, Source, Key, Summary, Status
+            combined_context += jira_filtered[["Date", "Source", "Key", "Summary", "Details"]].to_markdown(index=False)
+            combined_context += "\n\n"
+    except:
+        combined_context += "No Jira data found.\n"
         
-        filtered['date'] = filtered['date'].dt.strftime('%Y-%m-%d')
-        
-        if "ai_summary" in filtered.columns:
-            return filtered[["date", "branch_context", "ai_summary"]].to_markdown(index=False)
-        else:
-            return filtered[["date", "branch_context", "message"]].to_markdown(index=False)
-    except Exception as e:
-        return f"Error reading range: {str(e)}"
+    return combined_context if combined_context.strip() else "No activity found in either source."
     
 
 @mcp.tool()
