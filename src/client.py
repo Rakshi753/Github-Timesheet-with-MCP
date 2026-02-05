@@ -15,7 +15,6 @@ from src.state import AgentState
 
 load_dotenv()
 
-# Setup LLM
 http_client = httpx.Client(verify=False)
 llm = ChatGroq(
     model="llama-3.1-8b-instant", 
@@ -24,7 +23,6 @@ llm = ChatGroq(
     http_client=http_client
 )
 
-# --- HELPER: Load Config ---
 def load_server_params(server_name: str) -> StdioServerParameters:
     with open("server_config.json", "r") as f:
         config = json.load(f)
@@ -40,7 +38,6 @@ def load_server_params(server_name: str) -> StdioServerParameters:
                 env_vars[k] = v
     return StdioServerParameters(command=srv_cfg["command"], args=srv_cfg["args"], env=env_vars)
 
-# --- HELPER: Batch Enrichment ---
 async def batch_enrich_commits(commits):
     """Sends batches of commit messages to LLM for summarization."""
     if not commits: return []
@@ -74,7 +71,6 @@ async def batch_enrich_commits(commits):
                 
     return enriched
 
-# --- NODES ---
 
 async def orchestrator_node(state: AgentState):
     print(f"--- [Orchestrator] Starting workflow for {state['repo_name']} ---")
@@ -167,10 +163,8 @@ async def reporter_node(state: AgentState):
         })
         context = read_result.content[0].text
 
-    # 3. Generate "Work Spreading" Report
     print("   ... Synthesizing Smooth 5-Day Narrative...")
     
-    # --- THIS PROMPT IS THE KEY FIX ---
     system_prompt = f"""
     You are an Expert Timesheet Generator.
     

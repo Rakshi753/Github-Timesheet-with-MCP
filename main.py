@@ -20,12 +20,10 @@ async def main():
     
     if not user or not repo: return
 
-    # Run Graph
     app = build_graph()
     initial_state = {
         "username": user, 
         "repo_name": repo, 
-        # Note: 'filter_days' will now be asked during execution, not start
         "filter_days": 7 
     }
     

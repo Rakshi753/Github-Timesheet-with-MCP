@@ -3,13 +3,20 @@
     "github-tool": {
       "command": "uv",
       "args": ["run", "src/servers/github_server.py"],
-      "env": {
-        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
-      }
+      "env": { "GITHUB_TOKEN": "${GITHUB_TOKEN}" }
     },
     "excel-tool": {
       "command": "uv",
       "args": ["run", "src/servers/excel_server.py"]
+    },
+    "jira-tool": {
+      "command": "uv",
+      "args": ["run", "src/servers/jira_server.py"],
+      "env": {
+        "JIRA_URL": "${JIRA_URL}",
+        "JIRA_EMAIL": "${JIRA_EMAIL}",
+        "JIRA_API_TOKEN": "${JIRA_API_TOKEN}"
+      }
     }
   }
 }
