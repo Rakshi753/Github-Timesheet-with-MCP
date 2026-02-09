@@ -45,26 +45,25 @@ def get_data_date_range(file_path: str) -> str:
     
     all_dates = []
     
-    # 1. Try GitHub Dates
     try:
         df_git = pd.read_excel(file_path, sheet_name="Target_User_Activity")
         if not df_git.empty and 'date' in df_git.columns:
             all_dates.extend(pd.to_datetime(df_git['date']).tolist())
     except:
-        pass # Sheet might not exist
+        pass 
         
-    # 2. Try Jira Dates
+   
     try:
         df_jira = pd.read_excel(file_path, sheet_name="Jira_Activity")
         if not df_jira.empty and 'Date' in df_jira.columns:
             all_dates.extend(pd.to_datetime(df_jira['Date']).tolist())
     except:
-        pass # Sheet might not exist
+        pass 
 
     if not all_dates:
         return "No date data available"
         
-    # Calculate Range
+    
     min_date = min(all_dates).strftime('%Y-%m-%d')
     max_date = max(all_dates).strftime('%Y-%m-%d')
     return f"{min_date}|{max_date}"
@@ -79,7 +78,6 @@ def read_unified_date_range(file_path: str, start_date: str, end_date: str) -> s
     
     combined_context = ""
     
-    # 1. Read GitHub Data
     try:
         df_git = pd.read_excel(file_path, sheet_name="Target_User_Activity")
         df_git['date'] = pd.to_datetime(df_git['date'])
@@ -89,7 +87,6 @@ def read_unified_date_range(file_path: str, start_date: str, end_date: str) -> s
         if not git_filtered.empty:
             git_filtered['date'] = git_filtered['date'].dt.strftime('%Y-%m-%d')
             col = "ai_summary" if "ai_summary" in git_filtered.columns else "message"
-            # Add Source Tag
             git_filtered['source'] = "[GitHub]"
             combined_context += "### GITHUB ACTIVITY:\n"
             combined_context += git_filtered[["date", "source", "branch_context", col]].to_markdown(index=False)
@@ -97,20 +94,16 @@ def read_unified_date_range(file_path: str, start_date: str, end_date: str) -> s
     except:
         combined_context += "No GitHub data found.\n\n"
 
-    # 2. Read Jira Data
     try:
         df_jira = pd.read_excel(file_path, sheet_name="Jira_Activity")
-        # Ensure column names match what we saved (Date, Key, Summary, etc.)
         df_jira['Date'] = pd.to_datetime(df_jira['Date'])
         mask = (df_jira['Date'] >= start_date) & (df_jira['Date'] <= end_date)
         jira_filtered = df_jira.loc[mask].sort_values('Date')
         
         if not jira_filtered.empty:
             jira_filtered['Date'] = jira_filtered['Date'].dt.strftime('%Y-%m-%d')
-            # Add Source Tag
             jira_filtered['Source'] = "[Jira]"
             combined_context += "### JIRA ACTIVITY:\n"
-            # Select relevant columns: Date, Source, Key, Summary, Status
             combined_context += jira_filtered[["Date", "Source", "Key", "Summary", "Details"]].to_markdown(index=False)
             combined_context += "\n\n"
     except:
@@ -127,10 +120,8 @@ def save_jira_data_to_excel(jira_data: List[Dict], filename: str) -> str:
     """
     if not jira_data: return "No Jira data to save."
     
-    # Flatten the data for Excel (One row per issue)
     rows = []
     for issue in jira_data:
-        # If there are worklogs, create a row for each worklog (more detailed)
         if issue["worklogs"]:
             for wl in issue["worklogs"]:
                 rows.append({
@@ -144,7 +135,6 @@ def save_jira_data_to_excel(jira_data: List[Dict], filename: str) -> str:
                     "URL": issue["url"]
                 })
         else:
-            # Just the issue status
             rows.append({
                 "Date": issue["last_updated"],
                 "Key": issue["key"],
@@ -160,7 +150,6 @@ def save_jira_data_to_excel(jira_data: List[Dict], filename: str) -> str:
     file_path = os.path.abspath(filename)
     
     try:
-        # Check if file exists to decide mode
         mode = 'a' if os.path.exists(file_path) else 'w'
         if_sheet_exists = 'replace' if mode == 'a' else None
         
