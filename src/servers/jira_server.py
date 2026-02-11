@@ -12,7 +12,6 @@ def fetch_jira_issues(project_key: str, days_lookback: int = 30) -> str:
     """
     Fetches Jira issues and worklogs for the current user in a specific project.
     """
-    # 1. Auth
     url = os.getenv("JIRA_URL")
     email = os.getenv("JIRA_EMAIL")
     token = os.getenv("JIRA_API_TOKEN")
@@ -21,11 +20,9 @@ def fetch_jira_issues(project_key: str, days_lookback: int = 30) -> str:
         return json.dumps({"error": "Missing Jira Credentials in .env"})
 
     try:
-        # 2. Connect
         jira = JIRA(server=url, basic_auth=(email, token))
         
-        # 3. Search (JQL)
-        # Find issues in PROJECT updated recently where I am Assignee OR Worklog Author
+
         jql = f'project = {project_key} AND (assignee = currentUser() OR worklogAuthor = currentUser()) AND updated >= -{days_lookback}d ORDER BY updated DESC'
         
         issues = jira.search_issues(jql, maxResults=50, fields="summary,status,priority,updated,created,assignee,worklog")
@@ -33,14 +30,12 @@ def fetch_jira_issues(project_key: str, days_lookback: int = 30) -> str:
         data = []
         
         for issue in issues:
-            # Get Worklogs (Time spent)
             worklogs = jira.worklogs(issue.id)
             user_worklogs = []
             for wl in worklogs:
-                # Filter strictly for the API user if possible, or just grab all for context
-                # For simplicity, we grab time spent
+
                 user_worklogs.append({
-                    "date": wl.started[:10], # "2023-10-05"
+                    "date": wl.started[:10], 
                     "time_spent": wl.timeSpent,
                     "comment": getattr(wl, 'comment', '')
                 })

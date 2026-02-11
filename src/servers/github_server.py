@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 from github import Github
 from fastmcp import FastMCP
 
-# Initialize Server
 mcp = FastMCP("github-server")
 
 load_dotenv()
@@ -22,7 +21,6 @@ def fetch_github_activity(repo_name: str, username: str, days_lookback: int = 73
 
     try:
         g = Github(token)
-        # Handle cases where user provides "owner/repo" or just "repo"
         if "/" not in repo_name:
             repo_name = f"{username}/{repo_name}"
             
@@ -32,8 +30,7 @@ def fetch_github_activity(repo_name: str, username: str, days_lookback: int = 73
         data_package = {"user_commits": [], "main_commits": []}
         seen_hashes = set()
         
-        # 1. Scan All Branches
-        # We assume the user might be working on feature branches not yet merged.
+
         branches = list(repo.get_branches())
         
         for branch in branches:
@@ -43,21 +40,17 @@ def fetch_github_activity(repo_name: str, username: str, days_lookback: int = 73
                     if c.sha in seen_hashes: continue
                     seen_hashes.add(c.sha)
                     
-                    # --- IMPROVED MATCHING LOGIC ---
                     is_match = False
                     
-                    # Check 1: Strict Match on GitHub Username (Login)
-                    # This works if the commit is linked to a GitHub account
+
                     if c.author and c.author.login.lower() == username.lower():
                         is_match = True
                     
-                    # Check 2: Loose Match on Git Author Name (The name in local git config)
-                    # This handles cases where "Rakshi753" (GitHub) != "Rakshith L" (Local Git)
+
                     elif c.commit.author.name:
                         author_name = c.commit.author.name.lower()
                         target_user = username.lower()
                         
-                        # Logic: Is the username inside the real name? OR Real name inside username?
                         if target_user in author_name or author_name in target_user:
                             is_match = True
                     
@@ -70,10 +63,8 @@ def fetch_github_activity(repo_name: str, username: str, days_lookback: int = 73
                             "branch_context": branch.name
                         })
             except Exception:
-                # Skip branches that are protected or empty
                 continue 
 
-        # 2. Get Main Context (Commit history of the main branch for reference)
         try:
             main_commits = repo.get_commits(sha=repo.default_branch, since=start_date)
             for c in main_commits:
