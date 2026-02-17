@@ -6,7 +6,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
 from src.client import build_graph
-
+import json
 load_dotenv()
 console = Console()
 
@@ -22,15 +22,13 @@ async def main():
 
     # Inputs
     user = console.input("[bold]GitHub Username:[/bold] ").strip()
-    repo = console.input("[bold]GitHub Repo (owner/repo):[/bold] ").strip()
     jira_proj = console.input("[bold]Jira Project Key (Optional):[/bold] ").strip()
     
-    if not user or not repo: return
+    if not user : return
 
     app = build_graph()
     initial_state = {
         "username": user, 
-        "repo_name": repo, 
         "jira_project": jira_proj,
         "filter_days": 7
     }
@@ -41,10 +39,9 @@ async def main():
         if result.get("final_timesheet"):
             console.print("\n")
             console.print(Panel(
-                Markdown(result["final_timesheet"]),
-                title="[bold green]Generated Timesheet[/bold green]",
-                border_style="green",
-                expand=False
+                f"[bold green]{result['final_timesheet']}[/bold green]",
+                title="[bold]Export Complete[/bold]",
+                border_style="green"
             ))
             console.print(f"[dim]File saved successfully.[/dim]")
             

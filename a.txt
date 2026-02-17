@@ -7,3 +7,281 @@ Rakshi753/Github-Timesheet-with-MCP
 Private
 
 Rakshi753
+
+
+
+import os
+import json
+import asyncio
+import re
+import warnings
+from datetime import datetime, timedelta
+
+# --- CRITICAL FIX: GLOBAL SSL BYPASS ---
+# We must patch httpx before importing other libraries to ensure
+# SSL verification is disabled for both Sync and Async clients.
+import httpx
+from httpx import Client, AsyncClient
+
+def patched_client_init(self, *args, **kwargs):
+    kwargs['verify'] = False
+    return Client._original_init(self, *args, **kwargs)
+
+def patched_async_client_init(self, *args, **kwargs):
+    kwargs['verify'] = False
+    return AsyncClient._original_init(self, *args, **kwargs)
+
+# Apply the patch if not already applied
+if not getattr(Client, "_original_init", None):
+    Client._original_init = Client.__init__
+    Client.__init__ = patched_client_init
+
+if not getattr(AsyncClient, "_original_init", None):
+    AsyncClient._original_init = AsyncClient.__init__
+    AsyncClient.__init__ = patched_async_client_init
+# ---------------------------------------
+
+from dotenv import load_dotenv
+from langgraph.graph import StateGraph, END
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import SystemMessage, HumanMessage
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+from contextlib import AsyncExitStack
+from rich.console import Console
+
+from src.state import AgentState
+
+# Suppress warnings
+warnings.filterwarnings("ignore", message="Unverified HTTPS request")
+load_dotenv()
+console = Console()
+
+# Initialize Groq LLM (Standard Init - Patch handles SSL now)
+llm = ChatGoogleGenerativeAI(
+    model="gemini-3-flash-preview",
+    temperature=0.1,
+    google_api_key=os.getenv("GOOGLE_API_KEY"),
+    convert_system_message_to_human=True
+)
+def load_server_params(server_name: str) -> StdioServerParameters:
+    with open("server_config.json", "r") as f:
+        config = json.load(f)
+    if server_name not in config["mcpServers"]:
+        raise ValueError(f"Server '{server_name}' not found")
+    srv_cfg = config["mcpServers"][server_name]
+    env_vars = os.environ.copy()
+    if "env" in srv_cfg:
+        for k, v in srv_cfg["env"].items():
+            if v.startswith("${") and v.endswith("}"):
+                env_vars[k] = os.getenv(v[2:-1], "")
+            else:
+                env_vars[k] = v
+    return StdioServerParameters(command=srv_cfg["command"], args=srv_cfg["args"], env=env_vars)
+
+async def batch_enrich_commits(commits):
+    if not commits: return []
+    enriched = []
+    batch_size = 20 
+    
+    console.log(f"[dim]Enriching {len(commits)} GitHub commits...[/dim]")
+    
+    for i in range(0, len(commits), batch_size):
+        batch = commits[i:i+batch_size]
+        batch_text = "\n".join([f"{idx+1}. {c['message']}" for idx, c in enumerate(batch)])
+        prompt = "Rewrite each git commit message into a single, professional, past-tense sentence. Return ONLY the numbered list."
+        try:
+            res = await llm.ainvoke([SystemMessage(content=prompt), HumanMessage(content=batch_text)])
+            lines = res.content.strip().split('\n')
+            for idx, commit in enumerate(batch):
+                summary = commit['message']
+                if idx < len(lines):
+                    clean = lines[idx].split(". ", 1)[-1].strip()
+                    if len(clean) > 5: summary = clean
+                commit['ai_summary'] = summary
+                enriched.append(commit)
+        except:
+            for commit in batch:
+                commit['ai_summary'] = commit['message']
+                enriched.append(commit)
+    return enriched
+
+async def github_node(state: AgentState):
+    """Fetches Global GitHub Activity (All Repos)."""
+    with console.status("[bold blue]Scanning Global GitHub Activity...[/bold blue]", spinner="dots"):
+        async with AsyncExitStack() as stack:
+            gh_params = load_server_params("github-tool")
+            gh_r, gh_w = await stack.enter_async_context(stdio_client(gh_params))
+            gh_sess = await stack.enter_async_context(ClientSession(gh_r, gh_w))
+            await gh_sess.initialize()
+
+            ex_params = load_server_params("excel-tool")
+            ex_r, ex_w = await stack.enter_async_context(stdio_client(ex_params))
+            ex_sess = await stack.enter_async_context(ClientSession(ex_r, ex_w))
+            await ex_sess.initialize()
+
+            # Global Search - No repo name needed
+            res = await gh_sess.call_tool("fetch_global_github_activity", {
+                "username": state["username"]
+            })
+            raw_data = json.loads(res.content[0].text)
+            
+            commit_count = len(raw_data.get("user_commits", []))
+            if commit_count > 0:
+                console.print(f"   [green]✔ Found {commit_count} commits across all repos[/green]")
+                raw_data["user_commits"] = await batch_enrich_commits(raw_data["user_commits"])
+            else:
+                console.print("   [yellow]⚠ No commits found[/yellow]")
+            
+            filename = f"{state['username']}_Timesheet_Report.xlsx"
+            res = await ex_sess.call_tool("save_github_data_to_excel", {
+                "user_commits": raw_data.get("user_commits", []),
+                "filename": filename
+            })
+            
+            return {"excel_file_path": res.content[0].text}
+
+async def jira_node(state: AgentState):
+    """Fetches Jira Data and Appends to Excel."""
+    jira_proj = state.get("jira_project")
+    if not jira_proj: return {}
+
+    with console.status(f"[bold blue]Fetching Jira Data ({jira_proj})...[/bold blue]", spinner="dots"):
+        path = state.get("excel_file_path")
+        async with AsyncExitStack() as stack:
+            jr_params = load_server_params("jira-tool")
+            jr_r, jr_w = await stack.enter_async_context(stdio_client(jr_params))
+            jr_sess = await stack.enter_async_context(ClientSession(jr_r, jr_w))
+            await jr_sess.initialize()
+
+            ex_params = load_server_params("excel-tool")
+            ex_r, ex_w = await stack.enter_async_context(stdio_client(ex_params))
+            ex_sess = await stack.enter_async_context(ClientSession(ex_r, ex_w))
+            await ex_sess.initialize()
+
+            res = await jr_sess.call_tool("fetch_jira_issues", {"project_key": jira_proj})
+            data = json.loads(res.content[0].text)
+            issues = data.get("jira_issues", [])
+            
+            if issues:
+                console.print(f"   [green]✔ Found {len(issues)} Jira items[/green]")
+                if path:
+                    await ex_sess.call_tool("save_jira_data_to_excel", {
+                        "jira_data": issues, "filename": os.path.basename(path)
+                    })
+    return {}
+
+async def reporter_node(state: AgentState):
+    """Generates the Final JSON and Appends Sheet."""
+    path = state.get("excel_file_path")
+    if not path: return {"final_timesheet": "Failed."}
+
+    try:
+        async with AsyncExitStack() as stack:
+            # ... (Stack initialization same as before) ...
+            ex_params = load_server_params("excel-tool")
+            r, w = await stack.enter_async_context(stdio_client(ex_params))
+            sess = await stack.enter_async_context(ClientSession(r, w))
+            await sess.initialize()
+            
+            # ... (Date Range & User Input logic same as before) ...
+            res = await sess.call_tool("get_data_date_range", {"file_path": path})
+            range_str = res.content[0].text.replace('|', ' to ')
+            
+            console.rule("[bold]Timesheet Configuration[/bold]")
+            console.print(f"[cyan]Data Available:[/cyan] {range_str}")
+            
+            emp_id = console.input("   [bold green]🆔 Employee ID: [/bold green]").strip()
+            emp_name = console.input("   [bold green]👤 Employee Name: [/bold green]").strip()
+            start_input = console.input("   [bold green]📅 Start Date (YYYY-MM-DD): [/bold green]").strip()
+            days_input = console.input("   [bold green]⏳ Number of Days [5]: [/bold green]").strip()
+            num_days = int(days_input) if days_input.isdigit() else 5
+            
+            start_dt = datetime.strptime(start_input, "%Y-%m-%d")
+            end_dt = start_dt + timedelta(days=num_days - 1)
+            target_dates = [(start_dt + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(num_days)]
+
+            with console.status("[bold magenta]Analysing Context...[/bold magenta]", spinner="earth"):
+                res = await sess.call_tool("read_unified_date_range", {
+                    "file_path": path, "start_date": start_input, "end_date": end_dt.strftime('%Y-%m-%d')
+                })
+                context = res.content[0].text
+                
+                sys_msg = f"""
+                You are a Corporate Timesheet Generator.
+                
+                TARGET DATES: {target_dates}
+                SOURCE DATA:
+                {context}
+                
+                CRITICAL RULES (FOLLOW STRICTLY):
+                1. **ONE ROW PER DAY**: Consolidate all work for a date into one entry.
+                2. **Project Name**: Use Jira Project Name. If missing, use "Internal Development".
+                
+                3. **Task Description (MANDATORY)**:
+                   - NEVER leave this blank.
+                   - If Jira Description is missing: GENERATE one based on the Task Summary.
+                   - **SANITIZE**: Remove technical symbols like {{{{ }}}}, __, or file extensions (e.g., "Refactor {{main.py}}" -> "Refactored the main application logic").
+                   - Style: Professional, past tense.
+                
+                4. **Remarks (MANDATORY)**:
+                   - Write a 1-sentence executive summary of the day's value (e.g., "Resolved critical API bugs and improved data validation.").
+                   - MUST NOT BE EMPTY.
+                
+                OUTPUT JSON List:
+                [
+                  {{
+                    "date": "YYYY-MM-DD",
+                    "project": "...",
+                    "task_summary": "...",
+                    "task_description": "...", 
+                    "activity": "...",
+                    "consolidated_remarks": "...", 
+                    "jira_time_spent": 0
+                  }}
+                ]
+                """
+                
+                human_msg = "Generate the JSON list now. Ensure descriptions and remarks are professionally written and NOT empty."
+                
+                ai_res = await llm.ainvoke([SystemMessage(content=sys_msg), HumanMessage(content=human_msg)])
+                raw_text = ai_res.content.strip()
+                
+                # ... (Parsing logic same as before) ...
+                json_str = ""
+                match = re.search(r'\[.*\]', raw_text, re.DOTALL)
+                if match:
+                    json_str = match.group(0)
+                else:
+                    json_str = raw_text.replace("```json", "").replace("```", "").strip()
+
+            console.print("\n[bold]Preview of Generated Data:[/bold]")
+            console.print(json_str[:500] + "...\n") 
+            
+            # ... (Update confirmation logic same as before) ...
+            if console.input("[bold yellow]⚡ Update Excel File? (y/n): [/bold yellow]").lower() == 'y':
+                final_res = await sess.call_tool("generate_final_timesheet", {
+                    "data_json": json_str,
+                    "employee_id": emp_id,
+                    "employee_name": emp_name,
+                    "source_file_path": path 
+                })
+                return {"final_timesheet": f"Updated file: {final_res.content[0].text}"}
+                
+        return {"final_timesheet": "Aborted."}
+        
+    except Exception as e:
+        import traceback
+        console.print(f"[bold red]❌ Detailed Error:[/bold red] {e}")
+        return {"final_timesheet": "Failed."}
+
+def build_graph():
+    wf = StateGraph(AgentState)
+    wf.add_node("github", github_node)
+    wf.add_node("jira", jira_node)
+    wf.add_node("reporter", reporter_node)
+    wf.set_entry_point("github")
+    wf.add_edge("github", "jira")
+    wf.add_edge("jira", "reporter")
+    wf.add_edge("reporter", END)
+    return wf.compile()
